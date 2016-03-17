@@ -19,10 +19,6 @@ namespace Box2DDemo
             Freelook.SetEyeTarget(eye, target);
 
             Graphics.SetFormText("BulletSharp - Box 2D Demo");
-            Graphics.SetInfoText("Move using mouse and WASD+shift\n" +
-                "F3 - Toggle debug\n" +
-                //"F11 - Toggle fullscreen\n" +
-                "Space - Shoot box");
         }
 
         protected override void OnInitializePhysics()
@@ -36,11 +32,11 @@ namespace Box2DDemo
             VoronoiSimplexSolver simplex = new VoronoiSimplexSolver();
             MinkowskiPenetrationDepthSolver pdSolver = new MinkowskiPenetrationDepthSolver();
 
-            Convex2DConvex2DAlgorithm.CreateFunc convexAlgo2d = new Convex2DConvex2DAlgorithm.CreateFunc(simplex, pdSolver);
+            Convex2DConvex2DAlgorithm.CreateFunc convexAlgo2D = new Convex2DConvex2DAlgorithm.CreateFunc(simplex, pdSolver);
 
-            Dispatcher.RegisterCollisionCreateFunc(BroadphaseNativeType.Convex2DShape, BroadphaseNativeType.Convex2DShape, convexAlgo2d);
-            Dispatcher.RegisterCollisionCreateFunc(BroadphaseNativeType.Box2DShape, BroadphaseNativeType.Convex2DShape, convexAlgo2d);
-            Dispatcher.RegisterCollisionCreateFunc(BroadphaseNativeType.Convex2DShape, BroadphaseNativeType.Box2DShape, convexAlgo2d);
+            Dispatcher.RegisterCollisionCreateFunc(BroadphaseNativeType.Convex2DShape, BroadphaseNativeType.Convex2DShape, convexAlgo2D);
+            Dispatcher.RegisterCollisionCreateFunc(BroadphaseNativeType.Box2DShape, BroadphaseNativeType.Convex2DShape, convexAlgo2D);
+            Dispatcher.RegisterCollisionCreateFunc(BroadphaseNativeType.Convex2DShape, BroadphaseNativeType.Box2DShape, convexAlgo2D);
             Dispatcher.RegisterCollisionCreateFunc(BroadphaseNativeType.Box2DShape, BroadphaseNativeType.Box2DShape, new Box2DBox2DCollisionAlgorithm.CreateFunc());
 
             Broadphase = new DbvtBroadphase();
@@ -81,39 +77,36 @@ namespace Box2DDemo
             float mass = 1.0f;
             Vector3 localInertia = colShape.CalculateLocalInertia(mass);
 
-            Matrix startTransform;
+            RigidBodyConstructionInfo rbInfo = new RigidBodyConstructionInfo(mass, null, colShape, localInertia);
 
             Vector3 x = new Vector3(-ArraySizeX, 8, -20);
             Vector3 y = Vector3.Zero;
             Vector3 deltaX = new Vector3(1, 2, 0);
             Vector3 deltaY = new Vector3(2, 0, 0);
 
-            int i, j;
-            for (i = 0; i < ArraySizeY; i++)
+            for (int i = 0; i < ArraySizeY; i++)
             {
                 y = x;
-                for (j = 0; j < ArraySizeX; j++)
+                for (int j = 0; j < ArraySizeX; j++)
                 {
-                    startTransform = Matrix.Translation(y - new Vector3(-10, 0, 0));
+                    Matrix startTransform = Matrix.Translation(y - new Vector3(-10, 0, 0));
 
                     //using motionstate is recommended, it provides interpolation capabilities, and only synchronizes 'active' objects
-                    DefaultMotionState myMotionState = new DefaultMotionState(startTransform);
+                    rbInfo.MotionState = new DefaultMotionState(startTransform);
 
-                    RigidBodyConstructionInfo rbInfo;
                     switch (j % 3)
                     {
                         case 0:
-                            rbInfo = new RigidBodyConstructionInfo(mass, myMotionState, colShape, localInertia);
+                            rbInfo.CollisionShape = colShape;
                             break;
                         case 1:
-                            rbInfo = new RigidBodyConstructionInfo(mass, myMotionState, colShape3, localInertia);
+                            rbInfo.CollisionShape = colShape3;
                             break;
                         default:
-                            rbInfo = new RigidBodyConstructionInfo(mass, myMotionState, colShape2, localInertia);
+                            rbInfo.CollisionShape = colShape2;
                             break;
                     }
                     RigidBody body = new RigidBody(rbInfo);
-                    rbInfo.Dispose();
                     //body.ActivationState = ActivationState.IslandSleeping;
                     body.LinearFactor = new Vector3(1, 1, 0);
                     body.AngularFactor = new Vector3(0, 0, 1);
@@ -124,6 +117,8 @@ namespace Box2DDemo
                 }
                 x += deltaX;
             }
+
+            rbInfo.Dispose();
         }
     }
 

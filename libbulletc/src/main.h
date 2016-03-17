@@ -112,6 +112,7 @@
 #define btCapsuleShape void
 #define btCapsuleShapeX void
 #define btCapsuleShapeZ void
+#define btCapsuleShapeData void
 #endif
 
 #ifndef BT_CHARACTER_CONTROLLER_INTERFACE_H
@@ -1092,6 +1093,7 @@ typedef void* (*Win32lsMemorySetupFunc)();
 #ifndef GIMPACT_TRIANGLE_SHAPE_EX_H
 #define btPrimitiveTriangle void
 #define btTriangleShapeEx void
+#define GIM_TRIANGLE_CONTACT void
 #endif
 
 #ifndef GIM_BOX_SET_H_INCLUDED

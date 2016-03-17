@@ -181,8 +181,6 @@ namespace BulletSharp
 		[DllImport(Native.Dll, CallingConvention = Native.Conv), SuppressUnmanagedCodeSecurity]
 		static extern int btOptimizedBvhNode_getEscapeIndex(IntPtr obj);
 		[DllImport(Native.Dll, CallingConvention = Native.Conv), SuppressUnmanagedCodeSecurity]
-		static extern IntPtr btOptimizedBvhNode_getPadding(IntPtr obj);
-		[DllImport(Native.Dll, CallingConvention = Native.Conv), SuppressUnmanagedCodeSecurity]
 		static extern int btOptimizedBvhNode_getSubPart(IntPtr obj);
 		[DllImport(Native.Dll, CallingConvention = Native.Conv), SuppressUnmanagedCodeSecurity]
 		static extern int btOptimizedBvhNode_getTriangleIndex(IntPtr obj);
@@ -192,8 +190,6 @@ namespace BulletSharp
 		static extern void btOptimizedBvhNode_setAabbMinOrg(IntPtr obj, [In] ref Vector3 value);
 		[DllImport(Native.Dll, CallingConvention = Native.Conv), SuppressUnmanagedCodeSecurity]
 		static extern void btOptimizedBvhNode_setEscapeIndex(IntPtr obj, int value);
-		[DllImport(Native.Dll, CallingConvention = Native.Conv), SuppressUnmanagedCodeSecurity]
-		static extern void btOptimizedBvhNode_setPadding(IntPtr obj, IntPtr value);
 		[DllImport(Native.Dll, CallingConvention = Native.Conv), SuppressUnmanagedCodeSecurity]
 		static extern void btOptimizedBvhNode_setSubPart(IntPtr obj, int value);
 		[DllImport(Native.Dll, CallingConvention = Native.Conv), SuppressUnmanagedCodeSecurity]
@@ -252,10 +248,12 @@ namespace BulletSharp
 		}
 
 		internal IntPtr _native;
+		bool _preventDelete;
 
-		internal QuantizedBvh(IntPtr native)
+		internal QuantizedBvh(IntPtr native, bool preventDelete)
 		{
 			_native = native;
+			_preventDelete = preventDelete;
 		}
 
 		public QuantizedBvh()
@@ -385,7 +383,10 @@ namespace BulletSharp
 		{
 			if (_native != IntPtr.Zero)
 			{
-				btQuantizedBvh_delete(_native);
+				if (!_preventDelete)
+				{
+					btQuantizedBvh_delete(_native);
+				}
 				_native = IntPtr.Zero;
 			}
 		}

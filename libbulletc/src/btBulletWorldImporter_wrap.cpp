@@ -1,6 +1,6 @@
-#include <../Extras/Serialize/BulletWorldImporter/btBulletWorldImporter.h>
-#include <../Extras/Serialize/BulletFileLoader/btBulletFile.h>
 #include <BulletDynamics/Dynamics/btDynamicsWorld.h>
+#include <../BulletFileLoader/btBulletFile.h>
+#include <btBulletWorldImporter.h>
 
 #include "btBulletWorldImporter_wrap.h"
 

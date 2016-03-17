@@ -18,7 +18,7 @@ namespace BulletSharpGen
             HashSet<string> hidePublicConstructors = new HashSet<string>() {
                 "btActivatingCollisionAlgorithm", "btContactConstraint", "btConvexInternalShape",
                 "btConvexInternalAabbCachingShape", "btPolyhedralConvexAabbCachingShape", "btTypedObject",
-                "btDbvtProxy", "btSimpleBroadphaseProxy", "btDispatcherInfo", "btTriangleMeshShape",
+                "btDbvtProxy", "btDispatcherInfo", "btTriangleMeshShape",
                 "btUsageBitfield", "btSoftBody::Anchor", "btSoftBody::Config", "btSoftBody::Cluster",
                 "btSoftBody::Face", "btSoftBody::Tetra", "btSoftBody::Element", "btSoftBody::Feature",
                 "btSoftBody::Link", "btSoftBody::Material", "btSoftBody::Node", "btSoftBody::Note",
@@ -63,24 +63,10 @@ namespace BulletSharpGen
                 "btSliderConstraint", "btUniversalConstraint",
                 "btMLCPSolver", "btMultiBodyConstraintSolver", "btNNCGConstraintSolver",
                 "btPairCachingGhostObject", "btSortedOverlappingPairCache", "btNullPairCache",
-                "btDbvtBroadphase", "btSimpleBroadphase",
+                "btDbvtBroadphase",
                 "btShapeHull", "btSoftBody::sRayCast", "btSoftBody::AJoint::Specs", "btSoftBody::LJoint::Specs",
                 "btCompoundShape" // constructor needed for CompoundFromGImpact in C++/CLI, but not C#
             };
-
-            // Classes that might be cleaned up by Bullet and not us (use preventDelete to indicate this)
-            HashSet<string> preventDelete = new HashSet<string>() {
-                "btAABB", "btCollisionAlgorithmCreateFunc",
-                "btCollisionObject", "btCollisionObjectWrapper", "btCollisionShape",
-                "btCollisionWorld::LocalConvexResult", "btCollisionWorld::LocalRayResult",
-                "btConstraintSolver", "btContactSolverInfoData", "btDbvt",
-                "btOverlappingPairCache", "btPoolAllocator",
-                "btRotationalLimitMotor", "btTranslationalLimitMotor",
-                "btRotationalLimitMotor2", "btTranslationalLimitMotor2",
-                "btConstraintSetting", "btSimulationIslandManager",
-                "btSolve2LinearConstraint", "btIndexedMesh", "btTriangleInfoMap",
-                "btAngularLimit", "btContactSolverInfo",
-                "btWheelInfo", "btManifoldPoint", "btCollisionWorld::LocalShapeInfo"};
 
             // Classes that have OnDisposing/OnDisposed events
             HashSet<string> trackingDisposable = new HashSet<string>() {
@@ -98,10 +84,6 @@ namespace BulletSharpGen
                 if (hideInternalConstructor.Contains(@class.FullyQualifiedName))
                 {
                     @class.NoInternalConstructor = true;
-                }
-                if (preventDelete.Contains(@class.FullyQualifiedName))
-                {
-                    @class.HasPreventDelete = true;
                 }
                 if (trackingDisposable.Contains(@class.FullyQualifiedName))
                 {
@@ -197,7 +179,7 @@ namespace BulletSharpGen
             }
             if (t.Target != null)
             {
-                if (t.Target.IsPureEnum)
+                if (t.Target is EnumDefinition)
                 {
                     return false;
                 }
@@ -208,8 +190,9 @@ namespace BulletSharpGen
             }
             switch (t.Name)
             {
-                case "btTransform":
+                case "btMatrix3x3":
                 case "btQuaternion":
+                case "btTransform":
                 case "btVector3":
                 case "btVector4":
                     return false;
@@ -219,6 +202,37 @@ namespace BulletSharpGen
 
         public static string GetTypeName(TypeRefDefinition type)
         {
+            string name = type.IsConst ? "const " : "";
+
+            if (type.IsBasic)
+            {
+                return name + type.Name;
+            }
+
+            if (type.Referenced != null)
+            {
+                switch (type.ManagedName)
+                {
+                    /*case "Matrix3x3":
+                    case "Quaternion":
+                    case "Transform":
+                    case "Vector3":
+                    case "Vector4":
+                        return name + "btScalar*";*/
+                    default:
+                        return name + GetTypeName(type.Referenced) + "*";
+                }
+            }
+
+            var target = type.Target;
+            if (target != null && target is EnumDefinition)
+            {
+                if (target.Parent != null && target.Parent.IsPureEnum)
+                {
+                    return target.Parent.FullName;
+                }
+            }
+
             switch (type.ManagedName)
             {
                 case "Matrix3x3":
@@ -226,10 +240,14 @@ namespace BulletSharpGen
                 case "Transform":
                 case "Vector3":
                 case "Vector4":
-                    return "btScalar";
+                    name += "btScalar";
+                    break;
                 default:
-                    return type.FullName;
+                    name += type.FullName;
+                    break;
             }
+
+            return name;
         }
 
         public static string GetTypeNameCS(TypeRefDefinition type)
@@ -431,6 +449,25 @@ namespace BulletSharpGen
                 return null;
             }
 
+            if (parameter.MarshalDirection == MarshalDirection.Out)
+            {
+                switch (parameter.Type.ManagedName)
+                {
+                    case "Quaternion":
+                        return "QUATERNION_DEF(" + parameter.Name + ");";
+                    case "Matrix3x3":
+                        return "MATRIX3X3_DEF(" + parameter.Name + ");";
+                    case "Transform":
+                        return "TRANSFORM_DEF(" + parameter.Name + ");";
+                    case "Vector3":
+                        return "VECTOR3_DEF(" + parameter.Name + ");";
+                    case "Vector4":
+                        return "VECTOR4_DEF(" + parameter.Name + ");";
+                    default:
+                        return null;
+                }
+            }
+
             switch (parameter.Type.ManagedName)
             {
                 case "Quaternion":
@@ -600,11 +637,11 @@ namespace BulletSharpGen
                 case "CollisionObject":
                 case "CollisionShape":
                 case "OverlappingPairCache":
-                    return string.Format("{0}.GetManaged(", method.ReturnType.ManagedName);
+                    return $"{method.ReturnType.ManagedName}.GetManaged(";
                 case "IDebugDraw":
                     return "DebugDraw.GetManaged(";
                 case "CollisionObjectWrapper":
-                    return string.Format("new {0}(", method.ReturnType.ManagedName);
+                    return $"new {method.ReturnType.ManagedName}(";
                 default:
                     return "";
             }
@@ -662,13 +699,10 @@ namespace BulletSharpGen
                     {
                         return type.ManagedNameCS + "[]";
                     }
-                    else
+                    // reference
+                    if (!(type.IsConst || type.Referenced.IsConst))
                     {
-                        // reference
-                        if (!(type.IsConst || type.Referenced.IsConst))
-                        {
-                            return "[Out] out " + type.ManagedNameCS;
-                        }
+                        return "[Out] out " + type.ManagedNameCS;
                     }
                 }
                 return "IntPtr";
@@ -742,7 +776,7 @@ namespace BulletSharpGen
                         output.AppendLine(GetTabs(level + 2) + "get");
                         output.AppendLine(GetTabs(level + 2) + "{");
                         output.AppendLine(GetTabs(level + 3) + GetTypeNameCS(type) + " value;");
-                        output.AppendLine(GetTabs(level + 3) + string.Format("{0}_{1}(_native, out value);", prop.Parent.FullNameCS, prop.Getter.Name));
+                        output.AppendLine(GetTabs(level + 3) + string.Format("{0}_{1}(_native, out value);", prop.Parent.FullNameC, prop.Getter.Name));
                         output.AppendLine(GetTabs(level + 3) + "return value;");
                         output.AppendLine(GetTabs(level + 2) + '}');
                         return output.ToString();
@@ -751,7 +785,7 @@ namespace BulletSharpGen
 
             output.AppendLine(GetTabs(level + 2) + string.Format("get {{ return {0}{1}_{2}(_native){3}; }}",
                 GetTypeMarshalConstructorStartCS(prop.Getter),
-                prop.Parent.FullNameCS, prop.Getter.Name,
+                prop.Parent.FullNameC, prop.Getter.Name,
                 GetTypeMarshalConstructorEndCS(prop.Getter)));
             return output.ToString();
         }

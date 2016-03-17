@@ -21,6 +21,7 @@ FIND_PATH(BULLET_INCLUDE_DIR NAMES btBulletCollisionCommon.h
 INCLUDE_DIRECTORIES(${BULLET_INCLUDE_DIR})
 INCLUDE_DIRECTORIES(${BULLET_INCLUDE_DIR}/../Extras/HACD/)
 INCLUDE_DIRECTORIES(${BULLET_INCLUDE_DIR}/../Extras/Serialize/BulletWorldImporter/)
+INCLUDE_DIRECTORIES(${BULLET_INCLUDE_DIR}/../Extras/Serialize/BulletXmlWorldImporter/)
 
 IF(${CMAKE_GENERATOR} MATCHES "Unix Makefiles")
     SET(BULLET_LIB_DIR ${BULLET_INCLUDE_DIR}/..)
@@ -28,10 +29,10 @@ IF(${CMAKE_GENERATOR} MATCHES "Unix Makefiles")
     LINK_DIRECTORIES(${BULLET_LIB_DIR}/build/src/BulletDynamics)
     LINK_DIRECTORIES(${BULLET_LIB_DIR}/build/src/BulletSoftBody)
     LINK_DIRECTORIES(${BULLET_LIB_DIR}/build/src/LinearMath)
+    LINK_DIRECTORIES(${BULLET_LIB_DIR}/build/Extras/HACD)
     LINK_DIRECTORIES(${BULLET_LIB_DIR}/build/Extras/Serialize/BulletFileLoader)
     LINK_DIRECTORIES(${BULLET_LIB_DIR}/build/Extras/Serialize/BulletWorldImporter)
     LINK_DIRECTORIES(${BULLET_LIB_DIR}/build/Extras/Serialize/BulletXmlWorldImporter)
-    LINK_DIRECTORIES(${BULLET_LIB_DIR}/build/Extras/HACD)
     SET(BULLETC_LIB bulletc)
 ELSE()
     IF(${CMAKE_GENERATOR} MATCHES "Visual Studio 9 2008")
@@ -359,6 +360,8 @@ ADD_LIBRARY(${BULLETC_LIB} SHARED
     src/btTriangleMeshShape_wrap.h
     src/btTriangleShape_wrap.cpp
     src/btTriangleShape_wrap.h
+    src/btTriangleShapeEx_wrap.cpp
+    src/btTriangleShapeEx_wrap.h
     src/btTypedConstraint_wrap.cpp
     src/btTypedConstraint_wrap.h
     src/btUniformScalingShape_wrap.cpp

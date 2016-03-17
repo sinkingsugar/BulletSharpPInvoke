@@ -11,6 +11,7 @@ btSoftBody_AJoint_IControlWrapper::btSoftBody_AJoint_IControlWrapper(pIControl_P
 {
 	_prepareCallback = PrepareCallback;
 	_speedCallback = SpeedCallback;
+	_wrapperData = 0;
 }
 
 void btSoftBody_AJoint_IControlWrapper::Prepare(btSoftBody::AJoint* aJoint)
@@ -23,7 +24,7 @@ btScalar btSoftBody_AJoint_IControlWrapper::Speed(btSoftBody::AJoint* aJoint, bt
 	return _speedCallback(aJoint, current);
 }
 
-void* btSoftBody_AJoint_IControlWrapper::getWrapperData()
+void* btSoftBody_AJoint_IControlWrapper::getWrapperData() const
 {
 	return _wrapperData;
 }
@@ -209,9 +210,9 @@ void btSoftBody_AJoint_Specs_setIcontrol(btSoftBody::AJoint::Specs* obj, btSoftB
 }
 
 
-void btSoftBody_AJoint_getAxis(btSoftBody::AJoint* obj, btScalar* value)
+btVector3* btSoftBody_AJoint_getAxis(btSoftBody::AJoint* obj)
 {
-	VECTOR3_OUT_VAL(obj->m_axis, value);
+	return obj->m_axis;
 }
 
 btSoftBody::AJoint::IControl* btSoftBody_AJoint_getIcontrol(btSoftBody::AJoint* obj)
@@ -293,11 +294,6 @@ void btSoftBody_Anchor_setLocal(btSoftBody::Anchor* obj, const btScalar* value)
 void btSoftBody_Anchor_setNode(btSoftBody::Anchor* obj, btSoftBody::Node* value)
 {
 	obj->m_node = value;
-}
-
-void btSoftBody_Anchor_delete(btSoftBody::Anchor* obj)
-{
-	delete obj;
 }
 
 
@@ -706,11 +702,6 @@ void btSoftBody_Cluster_setNvimpulses(btSoftBody::Cluster* obj, int value)
 void btSoftBody_Cluster_setSelfCollisionImpulseFactor(btSoftBody::Cluster* obj, btScalar value)
 {
 	obj->m_selfCollisionImpulseFactor = value;
-}
-
-void btSoftBody_Cluster_delete(btSoftBody::Cluster* obj)
-{
-	delete obj;
 }
 
 
@@ -1917,47 +1908,6 @@ void btSoftBody_sCti_setOffset(btSoftBody::sCti* obj, btScalar value)
 }
 
 void btSoftBody_sCti_delete(btSoftBody::sCti* obj)
-{
-	delete obj;
-}
-
-
-btSoftBody::sMedium* btSoftBody_sMedium_new()
-{
-	return new btSoftBody::sMedium();
-}
-
-btScalar btSoftBody_sMedium_getDensity(btSoftBody::sMedium* obj)
-{
-	return obj->m_density;
-}
-
-btScalar btSoftBody_sMedium_getPressure(btSoftBody::sMedium* obj)
-{
-	return obj->m_pressure;
-}
-
-void btSoftBody_sMedium_getVelocity(btSoftBody::sMedium* obj, btScalar* value)
-{
-	VECTOR3_OUT(&obj->m_velocity, value);
-}
-
-void btSoftBody_sMedium_setDensity(btSoftBody::sMedium* obj, btScalar value)
-{
-	obj->m_density = value;
-}
-
-void btSoftBody_sMedium_setPressure(btSoftBody::sMedium* obj, btScalar value)
-{
-	obj->m_pressure = value;
-}
-
-void btSoftBody_sMedium_setVelocity(btSoftBody::sMedium* obj, const btScalar* value)
-{
-	VECTOR3_IN(value, &obj->m_velocity);
-}
-
-void btSoftBody_sMedium_delete(btSoftBody::sMedium* obj)
 {
 	delete obj;
 }

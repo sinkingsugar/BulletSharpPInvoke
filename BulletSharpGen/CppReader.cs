@@ -33,7 +33,7 @@ namespace BulletSharpGen
         {
             this.project = project;
 
-            foreach (string sourceRelDir in project.SourceRootFolders)
+            foreach (string sourceRelDir in project.SourceRootFoldersFull)
             {
                 string sourceFullDir = Path.GetFullPath(sourceRelDir).Replace('\\', '/');
 
@@ -42,7 +42,7 @@ namespace BulletSharpGen
                 foreach (string headerFullDir in headerFiles)
                 {
                     string headerFullDirCanonical = headerFullDir.Replace('\\', '/');
-                    string headerRelDir = headerFullDirCanonical.Substring(sourceFullDir.Length);
+                    //string headerRelDir = headerFullDirCanonical.Substring(sourceFullDir.Length);
 
                     HeaderDefinition header;
                     if (project.HeaderDefinitions.TryGetValue(headerFullDirCanonical, out header))
@@ -90,34 +90,22 @@ namespace BulletSharpGen
 
             Console.Write("Reading headers");
 
-            index = new Index();
-
-            while (headerQueue.Count != 0)
+            using (index = new Index())
             {
-                ReadHeader(headerQueue[0]);
+                while (headerQueue.Count != 0)
+                {
+                    ReadHeader(headerQueue[0]);
+                }
             }
-            /*
-            if (Directory.Exists(src + "..\\Extras\\"))
-            {
-                ReadHeader(src + "..\\Extras\\Serialize\\BulletFileLoader\\btBulletFile.h");
-                ReadHeader(src + "..\\Extras\\Serialize\\BulletWorldImporter\\btBulletWorldImporter.h");
-                ReadHeader(src + "..\\Extras\\Serialize\\BulletWorldImporter\\btWorldImporter.h");
-                ReadHeader(src + "..\\Extras\\Serialize\\BulletXmlWorldImporter\\btBulletXmlWorldImporter.h");
-            }
-            */
-            index.Dispose();
 
             Console.WriteLine();
             Console.WriteLine("Read complete - headers: {0}, classes: {1}",
                 project.HeaderDefinitions.Count, project.ClassDefinitions.Count);
 
 
-            foreach (var @class in project.ClassDefinitions.Values)
+            foreach (var @class in project.ClassDefinitions.Values.Where(c => !c.IsParsed))
             {
-                if (!@class.IsParsed)
-                {
-                    Console.WriteLine("Class removed: {0}", @class.FullyQualifiedName);
-                }
+                Console.WriteLine("Class removed: {0}", @class.FullyQualifiedName);
             }
         }
 
@@ -125,11 +113,8 @@ namespace BulletSharpGen
         {
             string filename = cursor.Extent.Start.File.Name.Replace('\\', '/');
 
-            // Skip this header if it's not part of any project source folders
-            if (project.SourceRootFolders.All(s => !filename.StartsWith(s.Replace('\\', '/'), StringComparison.OrdinalIgnoreCase)))
-            {
-                return Cursor.ChildVisitResult.Continue;
-            }
+            // Do not visit any included header
+            if (!filename.Equals(headerQueue[0])) return Cursor.ChildVisitResult.Continue;
 
             // Have we visited this header already?
             if (project.HeaderDefinitions.ContainsKey(filename))
@@ -149,9 +134,9 @@ namespace BulletSharpGen
                 _context.Namespace = cursor.Spelling;
                 return Cursor.ChildVisitResult.Recurse;
             }
-            else if (cursor.IsDefinition)
+            if (cursor.IsDefinition)
             {
-                switch(cursor.Kind)
+                switch (cursor.Kind)
                 {
                     case CursorKind.ClassDecl:
                     case CursorKind.ClassTemplate:
@@ -396,14 +381,30 @@ namespace BulletSharpGen
                     return Cursor.ChildVisitResult.Continue;
                 }
 
-                _context.Method = new MethodDefinition(methodName, _context.Class, cursor.NumArguments)
+                var existingMethodsMatch = _context.Class.Methods.Where(
+                    m => !m.IsParsed && methodName.Equals(m.Name) &&
+                         m.Parameters.Length == cursor.NumArguments);
+                int existingCount = existingMethodsMatch.Count();
+                if (existingCount == 1)
                 {
-                    ReturnType = new TypeRefDefinition(cursor.ResultType),
-                    IsConstructor = cursor.Kind == CursorKind.Constructor,
-                    IsStatic = cursor.IsStaticCxxMethod,
-                    IsVirtual = cursor.IsVirtualCxxMethod,
-                    IsAbstract = cursor.IsPureVirtualCxxMethod
-                };
+                    // TODO: check method parameter types if given
+                    _context.Method = existingMethodsMatch.First();
+                }
+                else if (existingCount >= 2)
+                {
+                    Console.WriteLine("Ambiguous method in project: " + methodName);
+                }
+
+                if (_context.Method == null)
+                {
+                    _context.Method = new MethodDefinition(methodName, _context.Class, cursor.NumArguments);
+                }
+
+                _context.Method.ReturnType = new TypeRefDefinition(cursor.ResultType);
+                _context.Method.IsConstructor = cursor.Kind == CursorKind.Constructor;
+                _context.Method.IsStatic = cursor.IsStaticCxxMethod;
+                _context.Method.IsVirtual = cursor.IsVirtualCxxMethod;
+                _context.Method.IsAbstract = cursor.IsPureVirtualCxxMethod;
 
                 // Check if the return type is a template
                 cursor.VisitChildren(MethodTemplateTypeVisitor);
@@ -418,32 +419,51 @@ namespace BulletSharpGen
                     {
                         parameterName = "__unnamed" + i;
                     }
-                    _context.Parameter = new ParameterDefinition(parameterName, new TypeRefDefinition(arg.Type));
-                    _context.Method.Parameters[i] = _context.Parameter;
-                    arg.VisitChildren(MethodTemplateTypeVisitor);
-                    _context.Parameter = null;
 
-                    // Check if it's a const or optional parameter
-                    IEnumerable<Token> argTokens = _context.TranslationUnit.Tokenize(arg.Extent);
-                    foreach (Token token in argTokens)
+                    if (_context.Method.Parameters[i] == null)
                     {
-                        if (token.Spelling.Equals("="))
+                        _context.Parameter = new ParameterDefinition(parameterName, new TypeRefDefinition(arg.Type));
+                        _context.Method.Parameters[i] = _context.Parameter;
+                    }
+                    else
+                    {
+                        _context.Parameter = _context.Method.Parameters[i];
+                        _context.Parameter.Type = new TypeRefDefinition(arg.Type);
+                    }
+                    arg.VisitChildren(MethodTemplateTypeVisitor);
+
+                    // Check for a default value (optional parameter)
+                    var argTokens = _context.TranslationUnit.Tokenize(arg.Extent);
+                    if (argTokens.Any(a => a.Spelling.Equals("=")))
+                    {
+                        _context.Parameter.IsOptional = true;
+                    }
+
+                    // Get marshalling direction
+                    if (_context.Parameter.Type.IsPointer || _context.Parameter.Type.IsReference)
+                    {
+                        if (_context.Parameter.MarshalDirection != MarshalDirection.Out &&
+                            !_context.TranslationUnit.Tokenize(arg.Extent).Any(a => a.Spelling.Equals("const")))
                         {
-                            _context.Method.Parameters[i].IsOptional = true;
+                            _context.Parameter.MarshalDirection = MarshalDirection.InOut;
                         }
                     }
+
+                    _context.Parameter = null;
                 }
 
                 // Discard any private/protected virtual method unless it
                 // implements a public abstract method
                 if (_context.MemberAccess != AccessSpecifier.Public)
                 {
-                    if (_context.Method.Parent.BaseClass == null || !_context.Method.Parent.BaseClass.AbstractMethods.Contains(_context.Method))
+                    if (_context.Method.Parent.BaseClass == null ||
+                        !_context.Method.Parent.BaseClass.AbstractMethods.Contains(_context.Method))
                     {
                         _context.Method.Parent.Methods.Remove(_context.Method);
                     }
                 }
 
+                _context.Method.IsParsed = true;
                 _context.Method = null;
             }
             else if (cursor.Kind == CursorKind.FieldDecl)
@@ -462,7 +482,7 @@ namespace BulletSharpGen
                         int typeStart = displayName.IndexOf('<') + 1;
                         int typeEnd = displayName.LastIndexOf('>');
                         displayName = displayName.Substring(typeStart, typeEnd - typeStart);
-                        var specializationTypeRef = new TypeRefDefinition()
+                        var specializationTypeRef = new TypeRefDefinition
                         {
                             IsBasic = true,
                             Name = displayName
@@ -500,7 +520,8 @@ namespace BulletSharpGen
             Console.Write('.');
 
             var unsavedFiles = new UnsavedFile[] { };
-            using (_context.TranslationUnit = index.CreateTranslationUnit(headerFile, clangOptions.ToArray(), unsavedFiles, TranslationUnitFlags.SkipFunctionBodies))
+            using (_context.TranslationUnit = index.CreateTranslationUnit(headerFile,
+                clangOptions.ToArray(), unsavedFiles, TranslationUnitFlags.SkipFunctionBodies))
             {
                 var cur = _context.TranslationUnit.Cursor;
                 _context.Namespace = "";

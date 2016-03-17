@@ -2,17 +2,22 @@
 {
     public class MethodDefinition
     {
-        public string Name { get; private set; }
+        public string Name { get; }
         public string ManagedName { get; set; }
-        public ClassDefinition Parent { get; private set; }
+        public ClassDefinition Parent { get; }
         public TypeRefDefinition ReturnType { get; set; }
         public ParameterDefinition[] Parameters { get; set; }
+        public bool IsExcluded { get; set; }
         public bool IsStatic { get; set; }
         public bool IsAbstract { get; set; }
         public bool IsConstructor { get; set; }
         public bool IsVirtual { get; set; }
         public FieldDefinition Field { get; set; } // get/set method target
         public PropertyDefinition Property { get; set; } // property that wraps this get/set method
+
+        public bool IsParsed { get; set; }
+
+        public string BodyText { get; set; }
 
         public bool IsVoid
         {
@@ -57,24 +62,20 @@
             }
             Parameters.CopyTo(m.Parameters, 0);
             m.Field = Field;
-            m.Property = Property;
             m.IsAbstract = IsAbstract;
             m.IsConstructor = IsConstructor;
-            m.ManagedName = ManagedName;
+            m.IsExcluded = IsExcluded;
             m.IsStatic = IsStatic;
+            m.ManagedName = ManagedName;
+            m.Property = Property;
             m.ReturnType = ReturnType;
             return m;
         }
 
         public override bool Equals(object obj)
         {
-            if (obj == null)
-            {
-                return false;
-            }
-
             var m = obj as MethodDefinition;
-            if ((System.Object)m == null)
+            if (m == null)
             {
                 return false;
             }

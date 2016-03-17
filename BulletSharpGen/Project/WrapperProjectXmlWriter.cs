@@ -1,36 +1,19 @@
-﻿using System;
-using System.IO;
-using System.Linq;
+﻿using System.Linq;
 using System.Xml;
 
 namespace BulletSharpGen.Project
 {
     class WrapperProjectXmlWriter
     {
-        public static string MakeRelativePath(string fromPath, string toPath)
-        {
-            if (string.IsNullOrEmpty(fromPath)) throw new ArgumentNullException("fromPath");
-            if (string.IsNullOrEmpty(toPath)) throw new ArgumentNullException("toPath");
-
-            var fromUri = new Uri(fromPath);
-            var toUri = new Uri(toPath);
-
-            if (fromUri.Scheme != toUri.Scheme) { return toPath; } // path can't be made relative.
-
-            var relativeUri = fromUri.MakeRelativeUri(toUri);
-            var relativePath = Uri.UnescapeDataString(relativeUri.ToString());
-
-            if (toUri.Scheme.ToUpperInvariant() == "FILE")
-            {
-                relativePath = relativePath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
-            }
-
-            return relativePath;
-        }
-
         public static void WriteClassDefinition(XmlWriter writer, ClassDefinition @class)
         {
-            writer.WriteStartElement(@class.GetType().Name);
+            string name = @class.GetType().Name;
+            if (name.EndsWith("Definition"))
+            {
+                name = name.Substring(0, name.Length - "Definition".Length);
+            }
+
+            writer.WriteStartElement(name);
             writer.WriteAttributeString("Name", @class.Name);
             if (@class.NamespaceName != "")
             {
@@ -38,7 +21,11 @@ namespace BulletSharpGen.Project
             }
             if (@class.IsExcluded)
             {
-                writer.WriteAttributeString("IsExcluded", "True");
+                writer.WriteAttributeString("IsExcluded", "true");
+            }
+            if (@class.HasPreventDelete)
+            {
+                writer.WriteAttributeString("HasPreventDelete", "true");
             }
 
             foreach (var childClass in @class.Classes)
@@ -46,6 +33,34 @@ namespace BulletSharpGen.Project
                 WriteClassDefinition(writer, childClass);
             }
 
+            foreach (var method in @class.Methods)
+            {
+                // Write out only methods that have non-default options
+                if (method.Parameters.Any(p => p.MarshalDirection == MarshalDirection.Out) ||
+                    method.BodyText != null || method.IsExcluded)
+                {
+                    WriteMethodDefinition(writer, method);
+                }
+            }
+
+            writer.WriteEndElement();
+        }
+
+        public static void WriteMethodDefinition(XmlWriter writer, MethodDefinition method)
+        {
+            writer.WriteStartElement("Method");
+            writer.WriteAttributeString("Name", method.Name);
+            if (method.IsExcluded)
+            {
+                writer.WriteAttributeString("IsExcluded", "true");
+            }
+            foreach (var param in method.Parameters)
+            {
+                writer.WriteStartElement("Parameter");
+                writer.WriteAttributeString("Name", param.Name);
+                writer.WriteAttributeString("MarshalDirection", param.MarshalDirection.ToString());
+                writer.WriteEndElement();
+            }
             writer.WriteEndElement();
         }
 
@@ -53,9 +68,10 @@ namespace BulletSharpGen.Project
         {
             writer.WriteStartElement(mapping.GetType().Name);
             writer.WriteAttributeString("Name", mapping.Name);
-            if (mapping is ReplaceMapping)
+
+            var replaceMapping = mapping as ReplaceMapping;
+            if (replaceMapping != null)
             {
-                var replaceMapping = mapping as ReplaceMapping;
                 foreach (var replacement in replaceMapping.Replacements.OrderBy(kv => kv.Key))
                 {
                     writer.WriteStartElement("Replacement");
@@ -63,9 +79,9 @@ namespace BulletSharpGen.Project
                     writer.WriteAttributeString("With", replacement.Value);
                     writer.WriteEndElement();
                 }
-                if (replaceMapping is ScriptedMapping)
+                var scriptedMapping = replaceMapping as ScriptedMapping;
+                if (scriptedMapping != null)
                 {
-                    var scriptedMapping = replaceMapping as ScriptedMapping;
                     writer.WriteStartElement("ScriptBody");
                     writer.WriteString(scriptedMapping.ScriptBody);
                     writer.WriteEndElement();
@@ -76,9 +92,14 @@ namespace BulletSharpGen.Project
 
         public static void Write(WrapperProject project)
         {
-            using (var writer = XmlWriter.Create(project.ProjectPath, new XmlWriterSettings() { Indent = true }))
+            using (var writer = XmlWriter.Create(project.ProjectFilePath, new XmlWriterSettings() { Indent = true }))
             {
-                writer.WriteStartElement("Project");
+                writer.WriteStartElement("Project", "urn:dotnetwrappergen");
+
+                WriteStringElementIfNotNull(writer, "CppProjectPath", project.CppProjectPath);
+                WriteStringElementIfNotNull(writer, "CProjectPath", project.CProjectPath);
+                WriteStringElementIfNotNull(writer, "CsProjectPath", project.CsProjectPath);
+                WriteStringElementIfNotNull(writer, "CppCliProjectPath", project.CppCliProjectPath);
 
                 if (project.ClassNameMapping != null) WriteMapping(writer, project.ClassNameMapping);
                 if (project.MethodNameMapping != null) WriteMapping(writer, project.MethodNameMapping);
@@ -88,26 +109,26 @@ namespace BulletSharpGen.Project
                 writer.WriteString(project.NamespaceName);
                 writer.WriteEndElement();
 
-                foreach (string sourceRootFolder in project.SourceRootFolders)
+                for (int i = 0; i < project.SourceRootFolders.Count; i++)
                 {
-                    string sourceRootFolderCanonical = sourceRootFolder.Replace('\\', '/');
+                    string sourceRootFolder = project.SourceRootFolders[i];
+                    string sourceRootFolderFull = project.SourceRootFoldersFull.ElementAt(i);
+                    string sourceRootFolderCanonical = sourceRootFolderFull.Replace('\\', '/');
 
                     writer.WriteStartElement("SourceRootFolder");
-                    string sourceRootFolderRelative = MakeRelativePath(project.ProjectPath, sourceRootFolder);
-                    sourceRootFolderRelative = sourceRootFolderRelative.Replace('\\', '/');
-                    writer.WriteAttributeString("Path", sourceRootFolderRelative);
+                    writer.WriteAttributeString("Path", sourceRootFolder);
 
                     foreach (var header in project.HeaderDefinitions)
                     {
                         if (!header.Key.StartsWith(sourceRootFolderCanonical)) continue;
 
-                        writer.WriteStartElement("HeaderDefinition");
-                        string headerRelativePath = MakeRelativePath(sourceRootFolder, header.Key);
+                        writer.WriteStartElement("Header");
+                        string headerRelativePath = WrapperProject.MakeRelativePath(sourceRootFolderFull, header.Key);
                         headerRelativePath = headerRelativePath.Replace('\\', '/');
                         writer.WriteAttributeString("Path", headerRelativePath);
                         if (header.Value.IsExcluded)
                         {
-                            writer.WriteAttributeString("IsExcluded", "True");
+                            writer.WriteAttributeString("IsExcluded", "true");
                         }
                         else
                         {
@@ -123,6 +144,15 @@ namespace BulletSharpGen.Project
                     writer.WriteEndElement();
                 }
             }
+        }
+
+        static void WriteStringElementIfNotNull(XmlWriter writer, string elementName, string value)
+        {
+            if (value == null) return;
+
+            writer.WriteStartElement(elementName);
+            writer.WriteString(value);
+            writer.WriteEndElement();
         }
     }
 }

@@ -26,7 +26,7 @@ namespace BulletSharpGen
             WrapperWriter writer;
             if (cppCliMode)
             {
-                writer = new CppCliWriter(project.HeaderDefinitions.Values, project.NamespaceName);
+                writer = new CppCliWriter(project);
             }
             else
             {
@@ -44,7 +44,7 @@ namespace BulletSharpGen
             OutputSolution(TargetVS.VS2015, project);
             //project.Save();
 
-            CMakeWriter cmake = new CMakeWriter(project.HeaderDefinitions, project.NamespaceName);
+            CMakeWriter cmake = new CMakeWriter(project);
             cmake.Output();
 
             Console.Write("Press any key to continue...");
@@ -78,13 +78,17 @@ namespace BulletSharpGen
             string slnRelDir = (targetVS == TargetVS.VS2010) ? "" : "..\\";
             string rootFolder = slnRelDir + "src\\";
 
-            List<ProjectConfiguration> confs = new List<ProjectConfiguration>();
-            confs.Add(new ProjectConfiguration("Axiom", true, "GRAPHICS_AXIOM", slnRelDir + "..\\Axiom-SDK-0.8.3376.12322\\bin\\Net35"));
-            confs.Add(new ProjectConfiguration("Axiom", false, "GRAPHICS_AXIOM", slnRelDir + "..\\Axiom-SDK-0.8.3376.12322\\bin\\Net35"));
-            confs.Add(new ProjectConfiguration("Generic", true, "GRAPHICS_GENERIC"));
-            confs.Add(new ProjectConfiguration("Generic", false, "GRAPHICS_GENERIC"));
-            confs.Add(new ProjectConfiguration("Mogre", true, "GRAPHICS_MOGRE", "C:\\MogreSDK\\bin\\Debug"));
-            confs.Add(new ProjectConfiguration("Mogre", false, "GRAPHICS_MOGRE", "C:\\MogreSDK\\bin\\Release"));
+            var confs = new List<ProjectConfiguration>
+            {
+                new ProjectConfiguration("Axiom", true, "GRAPHICS_AXIOM",
+                    slnRelDir + "..\\Axiom-SDK-0.8.3376.12322\\bin\\Net35"),
+                new ProjectConfiguration("Axiom", false, "GRAPHICS_AXIOM",
+                    slnRelDir + "..\\Axiom-SDK-0.8.3376.12322\\bin\\Net35"),
+                new ProjectConfiguration("Generic", true, "GRAPHICS_GENERIC"),
+                new ProjectConfiguration("Generic", false, "GRAPHICS_GENERIC"),
+                new ProjectConfiguration("Mogre", true, "GRAPHICS_MOGRE", "C:\\MogreSDK\\bin\\Debug"),
+                new ProjectConfiguration("Mogre", false, "GRAPHICS_MOGRE", "C:\\MogreSDK\\bin\\Release")
+            };
             if (targetVS != TargetVS.VS2008)
             {
                 confs.Add(new ProjectConfiguration("MonoGame", true, "GRAPHICS_MONOGAME", "$(ProgramFiles)\\MonoGame\\v3.0\\Assemblies\\WindowsGL\\;$(ProgramFiles(x86))\\MonoGame\\v3.0\\Assemblies\\WindowsGL\\"));
@@ -206,9 +210,17 @@ namespace BulletSharpGen
 
             string bulletRoot = "..\\bullet3";
 
+            /*
+            foreach (string sourceRootFolder in project.SourceRootFolders)
+            {
+                string sourceRootFolderRel = WrapperProject.MakeRelativePath(project.ProjectFilePath, sourceRootFolder);
+                sourceRootFolderRel.ToString();
+            }
+            */
+
             var slnWriter = new SlnWriter(filterWriter, project.NamespaceName)
             {
-                IncludeDirectories = string.Format("{0}\\src;{0}\\Extras\\HACD;{0}\\Extras\\Serialize\\BulletWorldImporter;", slnRelDir + bulletRoot),
+                IncludeDirectories = string.Format("{0}\\src;{0}\\Extras\\HACD;{0}\\Extras\\Serialize\\BulletWorldImporter;{0}\\Extras\\Serialize\\BulletXmlWorldImporter;", slnRelDir + bulletRoot),
                 FilterWriter = filterWriter
             };
             if (targetVS == TargetVS.VS2008)

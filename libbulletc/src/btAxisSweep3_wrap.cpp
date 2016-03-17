@@ -51,7 +51,7 @@ unsigned short btAxisSweep3_getNumHandles(btAxisSweep3* obj, btOverlapCallback* 
 
 btOverlappingPairCallback* btAxisSweep3_getOverlappingPairUserCallback(btAxisSweep3* obj)
 {
-	return (btOverlappingPairCallback*)obj->getOverlappingPairUserCallback();
+	return const_cast<btOverlappingPairCallback*>(obj->getOverlappingPairUserCallback());
 }
 /*
 void btAxisSweep3_processAllOverlappingPairs(btAxisSweep3* obj, btOverlapCallback* callback)
@@ -144,7 +144,7 @@ unsigned int bt32BitAxisSweep3_getNumHandles(bt32BitAxisSweep3* obj, btOverlapCa
 
 btOverlappingPairCallback* bt32BitAxisSweep3_getOverlappingPairUserCallback(bt32BitAxisSweep3* obj)
 {
-	return (btOverlappingPairCallback*)obj->getOverlappingPairUserCallback();
+	return const_cast<btOverlappingPairCallback*>(obj->getOverlappingPairUserCallback());
 }
 /*
 void bt32BitAxisSweep3_processAllOverlappingPairs(bt32BitAxisSweep3* obj, btOverlapCallback* callback)
@@ -158,7 +158,7 @@ void bt32BitAxisSweep3_quantize(bt32BitAxisSweep3* obj, unsigned int* out, const
 	obj->quantize(out, VECTOR3_USE(point), isMax);
 }
 
-void bt32BitAxisSweep3_removeHandle(bt32BitAxisSweep3* obj, unsigned short handle, btDispatcher* dispatcher)
+void bt32BitAxisSweep3_removeHandle(bt32BitAxisSweep3* obj, unsigned int handle, btDispatcher* dispatcher)
 {
 	obj->removeHandle(handle, dispatcher);
 }
@@ -182,7 +182,7 @@ void bt32BitAxisSweep3_unQuantize(bt32BitAxisSweep3* obj, btBroadphaseProxy* pro
 	VECTOR3_DEF_OUT(aabbMax);
 }
 
-void bt32BitAxisSweep3_updateHandle(bt32BitAxisSweep3* obj, unsigned short handle, const btScalar* aabbMin, const btScalar* aabbMax, btDispatcher* dispatcher)
+void bt32BitAxisSweep3_updateHandle(bt32BitAxisSweep3* obj, unsigned int handle, const btScalar* aabbMin, const btScalar* aabbMax, btDispatcher* dispatcher)
 {
 	VECTOR3_CONV(aabbMin);
 	VECTOR3_CONV(aabbMax);

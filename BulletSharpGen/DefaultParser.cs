@@ -21,8 +21,10 @@ namespace BulletSharpGen
             ParseEnums();
             SetClassProperties();
             RemoveRedundantMethods();
+            CreateDefaultConstructors();
             CreateFieldAccessors();
             CreateProperties();
+            ResolveIncludes();
         }
 
         // n = 2 -> "\t\t"
@@ -48,11 +50,11 @@ namespace BulletSharpGen
             }
 
             StringBuilder outText = new StringBuilder();
-            int left = 0, right;
+            int left = 0;
 
             while (left < text.Length)
             {
-                right = text.IndexOf('_', left);
+                int right = text.IndexOf('_', left);
                 if (right == -1)
                 {
                     right = text.Length;
@@ -106,17 +108,19 @@ namespace BulletSharpGen
             foreach (var @class in Project.ClassDefinitions.Values)
             {
                 @class.IsAbstract = @class.AbstractMethods.Any();
-                @class.IsExcluded = IsExcludedClass(@class);
+                if (IsExcludedClass(@class))
+                {
+                    @class.IsExcluded = true;
+                }
             }
         }
 
         void ParseEnums()
         {
-            // For enums, remove any common prefix and check for flags
-            foreach (ClassDefinition @class in Project.ClassDefinitions.Values.Where(c => c is EnumDefinition))
+            // Remove any common prefix and check for flags
+            foreach (var @enum in Project.ClassDefinitions.Values.
+                Where(c => c is EnumDefinition).Cast<EnumDefinition>())
             {
-                var @enum = @class as EnumDefinition;
-
                 int prefixLength = @enum.GetCommonPrefix().Length;
                 @enum.GetCommonSuffix();
                 for (int i = 0; i < @enum.EnumConstants.Count; i++)
@@ -162,12 +166,6 @@ namespace BulletSharpGen
             var classDefinitionsList = new List<ClassDefinition>(Project.ClassDefinitions.Values);
             foreach (var @class in classDefinitionsList)
             {
-                // Include header for the base if necessary
-                if (@class.BaseClass != null && @class.Header != @class.BaseClass.Header)
-                {
-                    @class.Header.Includes.Add(@class.BaseClass.Header);
-                }
-
                 // Resolve typedef
                 if (@class.TypedefUnderlyingType != null)
                 {
@@ -202,15 +200,19 @@ namespace BulletSharpGen
             {
                 ResolveTypeRef(typeRef.Referenced);
             }
-            else if (!Project.ClassDefinitions.ContainsKey(typeRef.Name))
+            else if (Project.ClassDefinitions.ContainsKey(typeRef.Name))
+            {
+                typeRef.Target = Project.ClassDefinitions[typeRef.Name];
+            }
+            else
             {
                 // Search for unscoped enums
                 bool resolvedEnum = false;
-                foreach (var c in Project.ClassDefinitions.Values.Where(c => c is EnumDefinition))
+                foreach (var @class in Project.ClassDefinitions.Values.Where(c => c is EnumDefinition))
                 {
-                    if (typeRef.Name.Equals(c.FullyQualifiedName + "::" + c.Name))
+                    if (typeRef.Name.Equals(@class.FullyQualifiedName + "::" + @class.Name))
                     {
-                        typeRef.Target = c;
+                        typeRef.Target = @class;
                         resolvedEnum = true;
                     }
                 }
@@ -218,10 +220,6 @@ namespace BulletSharpGen
                 {
                     Console.WriteLine("Class " + typeRef.Name + " not found!");
                 }
-            }
-            else
-            {
-                typeRef.Target = Project.ClassDefinitions[typeRef.Name];
             }
 
             if (typeRef.SpecializedTemplateType != null)
@@ -270,9 +268,17 @@ namespace BulletSharpGen
                     var baseClass = @class.BaseClass;
                     while (baseClass != null)
                     {
-                        if (baseClass.Methods.Any(m => m.Equals(method)))
+                        var baseMethod = baseClass.Methods.FirstOrDefault(m => m.Equals(method));
+                        if (baseMethod != null)
                         {
-                            removedMethodsIndices.Add(i);
+                            if (baseMethod.IsExcluded)
+                            {
+                                method.IsExcluded = true;
+                            }
+                            else
+                            {
+                                removedMethodsIndices.Add(i);
+                            }
                             break;
                         }
                         baseClass = baseClass.BaseClass;
@@ -329,10 +335,22 @@ namespace BulletSharpGen
 
             // Apply class properties
             var classNameMapping = Project.ClassNameMapping as ScriptedMapping;
-            foreach (ClassDefinition @class in Project.ClassDefinitions.Values)
+            foreach (var @class in Project.ClassDefinitions.Values)
             {
                 classNameMapping.Globals.Header = @class.Header;
                 @class.ManagedName = classNameMapping.Map(@class.Name);
+
+                var @enum = @class as EnumDefinition;
+                if (@enum != null)
+                {
+                    if (@enum.Parent != null &&
+                        @enum.Parent.Methods.Count == 0 &&
+                        @enum.Parent.Fields.Count == 0 &&
+                        @enum.Parent.Classes.Count == 1)
+                    {
+                        @enum.ManagedName = @enum.Parent.ManagedName;
+                    }
+                }
             }
 
             // Set managed method/parameter names
@@ -385,7 +403,27 @@ namespace BulletSharpGen
             return ToCamelCase(param.Name, false);
         }
 
-        List<string> _booleanVerbs = new List<string>() { "Has", "Is", "Needs" };
+        // Create default constructor if no explicit C++ constructor exists.
+        void CreateDefaultConstructors()
+        {
+            foreach (var @class in Project.ClassDefinitions.Values)
+            {
+                if (@class.HidePublicConstructors) continue;
+                if (@class.IsStaticClass) continue;
+                if (@class is EnumDefinition) continue;
+                if (@class.IsPureEnum) continue;
+
+                var constructors = @class.Methods.Where(m => m.IsConstructor && !m.IsExcluded);
+                if (!constructors.Any())
+                {
+                    var constructor = new MethodDefinition(@class.Name, @class, 0);
+                    constructor.IsConstructor = true;
+                    constructor.ReturnType = new TypeRefDefinition();
+                }
+            }
+        }
+
+        string[] _booleanVerbs = { "Has", "Is", "Needs" };
 
         // Create getters and setters for fields
         void CreateFieldAccessors()
@@ -405,7 +443,7 @@ namespace BulletSharpGen
                     // Generate getter/setter methods
                     string getterName, setterName;
                     string managedGetterName, managedSetterName;
-                    string verb = _booleanVerbs.Where(v => name.StartsWith(v)).FirstOrDefault();
+                    string verb = _booleanVerbs.FirstOrDefault(v => name.StartsWith(v));
                     if (verb != null && "bool".Equals(field.Type.Name))
                     {
                         getterName = name;
@@ -425,13 +463,13 @@ namespace BulletSharpGen
                     MethodDefinition getter = null, setter = null;
                     foreach (var method in @class.Methods)
                     {
-                        if (method.ManagedName.Equals(managedGetterName) && method.Parameters.Length == 0)
+                        if (managedGetterName.Equals(method.ManagedName) && method.Parameters.Length == 0)
                         {
                             getter = method;
                             continue;
                         }
 
-                        if (method.ManagedName.Equals(managedSetterName) && method.Parameters.Length == 1)
+                        if (managedSetterName.Equals(method.ManagedName) && method.Parameters.Length == 1)
                         {
                             setter = method;
                         }
@@ -447,31 +485,37 @@ namespace BulletSharpGen
 
                     var prop = new PropertyDefinition(getter, GetPropertyName(getter));
 
-                    // Can't assign value to reference or constant array
-                    if (setter == null && !field.Type.IsReference && !field.Type.IsConstantArray)
+                    if (setter == null)
                     {
-                        setter = new MethodDefinition(setterName, @class, 1);
-                        setter.ManagedName = managedSetterName;
-                        setter.ReturnType = new TypeRefDefinition();
-                        setter.Field = field;
-                        TypeRefDefinition constType;
-                        if (!field.Type.IsBasic && !field.Type.IsPointer)
-                        {
-                            constType = field.Type.Copy();
-                            constType.IsConst = true;
-                        }
-                        else
-                        {
-                            constType = field.Type;
-                        }
-                        setter.Parameters[0] = new ParameterDefinition("value", constType);
-                        setter.Parameters[0].ManagedName = "value";
-
-                        prop.Setter = setter;
-                        prop.Setter.Property = prop;
+                        CreateFieldSetter(prop, setterName, managedSetterName);
                     }
                 }
             }
+        }
+
+        void CreateFieldSetter(PropertyDefinition prop, string setterName, string managedSetterName)
+        {
+            // Can't assign value to reference or constant array
+            if (prop.Type.IsReference || prop.Type.IsConstantArray) return;
+
+            if (prop.Type.Name != null && prop.Type.Name.StartsWith("btAlignedObjectArray")) return;
+
+            var type = prop.Getter.ReturnType;
+
+            MethodDefinition setter = new MethodDefinition(setterName, prop.Parent, 1);
+            setter.ManagedName = managedSetterName;
+            setter.ReturnType = new TypeRefDefinition();
+            setter.Field = prop.Getter.Field;
+            if (!type.IsBasic && !type.IsPointer)
+            {
+                type = type.Copy();
+                type.IsConst = true;
+            }
+            setter.Parameters[0] = new ParameterDefinition("value", type);
+            setter.Parameters[0].ManagedName = "value";
+
+            prop.Setter = setter;
+            prop.Setter.Property = prop;
         }
 
         string GetPropertyName(MethodDefinition getter)
@@ -499,7 +543,8 @@ namespace BulletSharpGen
             foreach (var @class in Project.ClassDefinitions.Values)
             {
                 // Getters with return type and 0 arguments
-                foreach (var method in @class.Methods.Where(m => !m.IsVoid && m.Parameters.Length == 0))
+                var getterMethods = @class.Methods.Where(m => !m.IsConstructor && !m.IsVoid && m.Parameters.Length == 0);
+                foreach (var method in getterMethods)
                 {
                     if (method.ManagedName.StartsWith("Get") ||
                         ("bool".Equals(method.ReturnType.Name) &&
@@ -540,7 +585,7 @@ namespace BulletSharpGen
                     {
                         string name = method.ManagedName.Substring(3);
                         // Find the property with the matching getter
-                        foreach (PropertyDefinition prop in @class.Properties)
+                        foreach (var prop in @class.Properties)
                         {
                             if (prop.Setter != null)
                             {
@@ -555,6 +600,61 @@ namespace BulletSharpGen
                             }
                         }
                     }
+                }
+            }
+        }
+
+        void ResolveInclude(TypeRefDefinition typeRef, HeaderDefinition parentHeader)
+        {
+            if (typeRef.IsPointer || typeRef.IsReference || typeRef.IsConstantArray)
+            {
+                ResolveInclude(typeRef.Referenced, parentHeader);
+            }
+            else if (typeRef.SpecializedTemplateType != null)
+            {
+                ResolveInclude(typeRef.SpecializedTemplateType, parentHeader);
+            }
+            else if (typeRef.IsIncomplete && typeRef.Target != null)
+            {
+                parentHeader.Includes.Add(typeRef.Target.Header);
+            }
+        }
+
+        // Add includes for incomplete types (forward references)
+        // Should be done after removing redundant methods.
+        void ResolveIncludes()
+        {
+            var classDefinitionsList = new List<ClassDefinition>(Project.ClassDefinitions.Values);
+            foreach (var @class in classDefinitionsList.Where(c => !c.IsExcluded))
+            {
+                var header = @class.Header;
+
+                // Include header for the base if necessary
+                if (@class.BaseClass != null && header != @class.BaseClass.Header)
+                {
+                    header.Includes.Add(@class.BaseClass.Header);
+                }
+
+                // Resolve typedef
+                if (@class.TypedefUnderlyingType != null)
+                {
+                    ResolveInclude(@class.TypedefUnderlyingType, header);
+                }
+
+                // Resolve method return type and parameter types
+                foreach (var method in @class.Methods)
+                {
+                    ResolveInclude(method.ReturnType, header);
+                    foreach (ParameterDefinition param in method.Parameters)
+                    {
+                        ResolveInclude(param.Type, header);
+                    }
+                }
+
+                // Resolve field types
+                foreach (var field in @class.Fields)
+                {
+                    ResolveInclude(field.Type, header);
                 }
             }
         }

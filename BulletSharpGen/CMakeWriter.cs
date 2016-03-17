@@ -6,15 +6,13 @@ namespace BulletSharpGen
 {
     class CMakeWriter
     {
-        private Dictionary<string, HeaderDefinition> headerDefinitions;
-        private string namespaceName;
+        WrapperProject _project;
 
         StreamWriter cmakeWriter;
 
-        public CMakeWriter(Dictionary<string, HeaderDefinition> headerDefinitions, string namespaceName)
+        public CMakeWriter(WrapperProject project)
         {
-            this.headerDefinitions = headerDefinitions;
-            this.namespaceName = namespaceName;
+            _project = project;
         }
 
         void Write(string s)
@@ -34,13 +32,13 @@ namespace BulletSharpGen
 
         public void Output()
         {
-            string outDirectoryC = namespaceName + "_c";
+            string outDirectoryC = Path.Combine(_project.CProjectPathFull, "..");
 
             Directory.CreateDirectory(outDirectoryC);
 
             // C++ header file (includes all other headers)
             string cmakeFilename = "CMakeLists.txt";
-            var cmakeFile = new FileStream(outDirectoryC + "\\" + cmakeFilename, FileMode.Create, FileAccess.Write);
+            var cmakeFile = new FileStream(Path.Combine(outDirectoryC, cmakeFilename), FileMode.Create, FileAccess.Write);
             cmakeWriter = new StreamWriter(cmakeFile);
 
             WriteLine("CMAKE_MINIMUM_REQUIRED (VERSION 2.6)");
@@ -64,19 +62,22 @@ namespace BulletSharpGen
             WriteLine("  NO_DEFAULT_PATH");
             WriteLine(")");
             WriteLine("INCLUDE_DIRECTORIES(${BULLET_INCLUDE_DIR})");
+            WriteLine("INCLUDE_DIRECTORIES(${BULLET_INCLUDE_DIR}/../Extras/HACD/)");
             WriteLine("INCLUDE_DIRECTORIES(${BULLET_INCLUDE_DIR}/../Extras/Serialize/BulletWorldImporter/)");
+            WriteLine("INCLUDE_DIRECTORIES(${BULLET_INCLUDE_DIR}/../Extras/Serialize/BulletXmlWorldImporter/)");
             WriteLine();
 
             WriteLine("IF(${CMAKE_GENERATOR} MATCHES \"Unix Makefiles\")");
-	        WriteLine("    SET(BULLET_LIB_DIR ${BULLET_INCLUDE_DIR}/..)");
-	        WriteLine("    LINK_DIRECTORIES(${BULLET_LIB_DIR}/build/src/BulletCollision)");
-	        WriteLine("    LINK_DIRECTORIES(${BULLET_LIB_DIR}/build/src/BulletDynamics)");
-	        WriteLine("    LINK_DIRECTORIES(${BULLET_LIB_DIR}/build/src/BulletSoftBody)");
-	        WriteLine("    LINK_DIRECTORIES(${BULLET_LIB_DIR}/build/src/LinearMath)");
-	        WriteLine("    LINK_DIRECTORIES(${BULLET_LIB_DIR}/build/Extras/Serialize/BulletFileLoader)");
-	        WriteLine("    LINK_DIRECTORIES(${BULLET_LIB_DIR}/build/Extras/Serialize/BulletWorldImporter)");
-	        WriteLine("    LINK_DIRECTORIES(${BULLET_LIB_DIR}/build/Extras/Serialize/BulletXmlWorldImporter)");
-	        WriteLine("    SET(BULLETC_LIB bulletc)");
+            WriteLine("    SET(BULLET_LIB_DIR ${BULLET_INCLUDE_DIR}/..)");
+            WriteLine("    LINK_DIRECTORIES(${BULLET_LIB_DIR}/build/src/BulletCollision)");
+            WriteLine("    LINK_DIRECTORIES(${BULLET_LIB_DIR}/build/src/BulletDynamics)");
+            WriteLine("    LINK_DIRECTORIES(${BULLET_LIB_DIR}/build/src/BulletSoftBody)");
+            WriteLine("    LINK_DIRECTORIES(${BULLET_LIB_DIR}/build/src/LinearMath)");
+            WriteLine("    LINK_DIRECTORIES(${BULLET_LIB_DIR}/build/Extras/HACD)");
+            WriteLine("    LINK_DIRECTORIES(${BULLET_LIB_DIR}/build/Extras/Serialize/BulletFileLoader)");
+            WriteLine("    LINK_DIRECTORIES(${BULLET_LIB_DIR}/build/Extras/Serialize/BulletWorldImporter)");
+            WriteLine("    LINK_DIRECTORIES(${BULLET_LIB_DIR}/build/Extras/Serialize/BulletXmlWorldImporter)");
+            WriteLine("    SET(BULLETC_LIB bulletc)");
             WriteLine("ELSE()");
             WriteLine("    IF(${CMAKE_GENERATOR} MATCHES \"Visual Studio 9 2008\")");
             WriteLine("        SET(REL_LIB_DIR msvc/2008)");
@@ -121,6 +122,7 @@ namespace BulletSharpGen
             WriteLine("TARGET_LINK_LIBRARIES(${BULLETC_LIB} BulletSoftBody${LIB_SUFFIX})");
             WriteLine("TARGET_LINK_LIBRARIES(${BULLETC_LIB} BulletWorldImporter${LIB_SUFFIX})");
             WriteLine("TARGET_LINK_LIBRARIES(${BULLETC_LIB} BulletXmlWorldImporter${LIB_SUFFIX})");
+            WriteLine("TARGET_LINK_LIBRARIES(${BULLETC_LIB} HACD${LIB_SUFFIX})");
 
             cmakeWriter.Dispose();
             cmakeFile.Dispose();
@@ -128,10 +130,10 @@ namespace BulletSharpGen
 
         void AddLibrary()
         {
-            List<string> sources = new List<string>();
-            var headers = headerDefinitions.Values.Where(h => h.Classes.Any()).OrderBy(x => x.Name);
+            var sources = new List<string>();
+            var headers = _project.HeaderDefinitions.Values.Where(h => h.Classes.Any()).OrderBy(x => x.Name);
 
-            foreach (HeaderDefinition header in headers)
+            foreach (var header in headers)
             {
                 sources.Add(header.Name + "_wrap.cpp");
                 sources.Add(header.Name + "_wrap.h");
@@ -139,14 +141,16 @@ namespace BulletSharpGen
             //sources.OrderBy(x => x.Na);
 
             WriteLine("ADD_LIBRARY(${BULLETC_LIB} SHARED");
-            WriteSources(new string[] {
+            WriteSources(new[]
+            {
                 "dllmain.cpp"
             });
-            WriteSources(new string[] {
+            WriteSources(new[]
+            {
                 "conversion.h",
                 "main.h",
                 "collections.cpp",
-                "collections.h",
+                "collections.h"
             }, "src");
             WriteSources(sources, "src");
             WriteLine(")");
@@ -156,7 +160,7 @@ namespace BulletSharpGen
         {
             foreach (string file in files)
             {
-                WriteLine(string.Format("    {0}/{1}", directory, file));
+                WriteLine($"    {directory}/{file}");
             }
         }
 
@@ -164,7 +168,7 @@ namespace BulletSharpGen
         {
             foreach (string file in files)
             {
-                WriteLine(string.Format("    {0}", file));
+                WriteLine($"    {file}");
             }
         }
     }

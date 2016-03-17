@@ -13,6 +13,8 @@ namespace BulletSharpGen
         const int TabWidth = 4;
         const int LineBreakWidth = 80;
 
+        WrapperProject _project;
+
         // Conditional compilation (#ifndef DISABLE_FEATURE)
         Dictionary<string, string> headerConditionals = new Dictionary<string, string>
         {
@@ -119,9 +121,14 @@ namespace BulletSharpGen
             {"WorldImporter", "DISABLE_SERIALIZE"}
         };
 
-        public CppCliWriter(IEnumerable<HeaderDefinition> headerDefinitions, string namespaceName)
-            : base(headerDefinitions, namespaceName)
+        // These do no need forward references
+        public List<string> PrecompiledHeaderReferences =
+            new List<string>(new[] {"Vector3", "Matrix3x3", "Quaternion", "Transform", "Vector4"});
+
+        public CppCliWriter(WrapperProject project)
+            : base(project.HeaderDefinitions.Values, project.NamespaceName)
         {
+            _project = project;
         }
 
         void WriteTabs(int n, bool source = false)
@@ -207,7 +214,8 @@ namespace BulletSharpGen
             SourceWriteLine(s);
         }
 
-        void EnsureAccess(int level, ref RefAccessSpecifier current, RefAccessSpecifier required, bool withWhiteSpace = true)
+        void EnsureAccess(int level, ref RefAccessSpecifier current, RefAccessSpecifier required,
+            bool withWhiteSpace = true)
         {
             if (current == required) return;
 
@@ -217,7 +225,7 @@ namespace BulletSharpGen
             }
 
             WriteTabs(level);
-            HeaderWriteLine(string.Format("{0}:", required.ToString().ToLower()));
+            HeaderWriteLine($"{required.ToString().ToLower()}:");
             current = required;
         }
 
@@ -345,8 +353,7 @@ namespace BulletSharpGen
                 if (needTypeMarshalEpilogue)
                 {
                     // Return after epilogue (cleanup)
-                    SourceWrite(string.Format("{0} ret = ",
-                        BulletParser.GetTypeRefName(method.ReturnType)));
+                    SourceWrite($"{BulletParser.GetTypeRefName(method.ReturnType)} ret = ");
                 }
                 else
                 {
@@ -388,7 +395,7 @@ namespace BulletSharpGen
                     }
                     else
                     {
-                        SourceWrite(string.Format("{0}->{1} = ", nativePointer, method.Field.Name));
+                        SourceWrite($"{nativePointer}->{method.Field.Name} = ");
                         if (param.Type.IsPointer || param.Type.IsReference)
                         {
                             if (param.Type.IsReference)
@@ -401,7 +408,7 @@ namespace BulletSharpGen
                                 param.Type.Referenced.Target.BaseClass != null)
                             {
                                 // Cast native pointer from base class
-                                SourceWrite(string.Format("({0}*)", param.Type.Referenced.FullName));
+                                SourceWrite($"({param.Type.Referenced.FullName}*)");
                             }
                         }
                         SourceWrite(param.ManagedName);
@@ -474,7 +481,7 @@ namespace BulletSharpGen
                     string typeConditional = GetTypeConditional(param.Type, parentClass.Header);
                     if (typeConditional != null)
                     {
-                        WriteLine(string.Format("#ifndef {0}", typeConditional));
+                        WriteLine($"#ifndef {typeConditional}");
                         hasSourceWhiteSpace = true;
                         hasConditional = true;
                     }
@@ -527,15 +534,15 @@ namespace BulletSharpGen
             else if (method.Property != null)
             {
                 headerMethodName = method.Property.Getter.Equals(method) ? "get" : "set";
-                sourceMethodName = string.Format("{0}::{1}", method.Property.Name, headerMethodName);
+                sourceMethodName = $"{method.Property.Name}::{headerMethodName}";
             }
             else
             {
                 headerMethodName = method.ManagedName;
                 sourceMethodName = headerMethodName;
             }
-            HeaderWrite(string.Format("{0}(", headerMethodName));
-            SourceWrite(string.Format("{0}::{1}(", parentClass.FullNameManaged, sourceMethodName));
+            HeaderWrite($"{headerMethodName}(");
+            SourceWrite($"{parentClass.FullNameCppCli}::{sourceMethodName}(");
 
             // Definition: parameters
             int numParameters = method.Parameters.Length - numOptionalParams;
@@ -548,8 +555,7 @@ namespace BulletSharpGen
             for (int i = 0; i < numParameters; i++)
             {
                 var param = method.Parameters[i];
-                Write(string.Format("{0} {1}",
-                    BulletParser.GetTypeRefName(param.Type), param.ManagedName));
+                Write($"{BulletParser.GetTypeRefName(param.Type)} {param.ManagedName}");
 
                 if (param.IsOptional)
                 {
@@ -591,7 +597,7 @@ namespace BulletSharpGen
                 doConstructorChaining = method.Parameters.All(p => !BulletParser.TypeRequiresMarshal(p.Type));
 
                 WriteTabs(1, true);
-                SourceWrite(string.Format(": {0}(", parentClass.BaseClass.ManagedName));
+                SourceWrite($": {parentClass.BaseClass.ManagedName}(");
 
                 if (doConstructorChaining)
                 {
@@ -630,7 +636,7 @@ namespace BulletSharpGen
                             if (param.ManagedName.ToLower() == cachedProperty.Key.ToLower()
                                 && param.Type.ManagedName == cachedProperty.Value.Property.Type.ManagedName)
                             {
-                                string assignment = string.Format("\t{0} = {1};", cachedProperty.Value.CacheFieldName, param.ManagedName);
+                                string assignment = $"\t{cachedProperty.Value.CacheFieldName} = {param.ManagedName};";
                                 assignments.Add(assignment);
                             }
                         }
@@ -707,7 +713,7 @@ namespace BulletSharpGen
             }
 
             // Write class definition
-            HeaderWrite(string.Format("ref class {0}", @class.ManagedName));
+            HeaderWrite($"ref class {@class.ManagedName}");
             if (@class.IsAbstract)
             {
                 HeaderWrite(" abstract");
@@ -718,7 +724,7 @@ namespace BulletSharpGen
             }
             if (@class.BaseClass != null)
             {
-                HeaderWriteLine(string.Format(" : {0}", @class.BaseClass.ManagedName));
+                HeaderWriteLine($" : {@class.BaseClass.ManagedName}");
             }
             else if (@class.IsTrackingDisposable)
             {
@@ -739,7 +745,7 @@ namespace BulletSharpGen
             var currentAccess = RefAccessSpecifier.Private;
 
             // Write child classes
-            if (!@class.Classes.All(cl => IsExcludedClass(cl)))
+            if (!@class.Classes.All(IsExcludedClass))
             {
                 OutputClasses(@class.Classes, ref currentAccess, level);
                 currentAccess = RefAccessSpecifier.Public;
@@ -751,15 +757,15 @@ namespace BulletSharpGen
             {
                 EnsureAccess(level, ref currentAccess, RefAccessSpecifier.Private);
                 WriteTabs(level + 1);
-                HeaderWriteLine(string.Format("{0}() {{}}", @class.ManagedName));
+                HeaderWriteLine($"{@class.ManagedName}() {{}}");
                 hasHeaderWhiteSpace = false;
             }
 
             // Downcast native pointer if any methods in a derived class use it
-            if (@class.BaseClass != null && @class.Methods.Any(m => !m.IsConstructor && !m.IsStatic))
+            if (@class.BaseClass != null && @class.Methods.Any(m => !m.IsConstructor && !m.IsStatic && !m.IsExcluded))
             {
                 EnsureSourceWhiteSpace();
-                SourceWriteLine(string.Format("#define Native static_cast<{0}*>(_native)", @class.FullyQualifiedName));
+                SourceWriteLine($"#define Native static_cast<{@class.FullyQualifiedName}*>(_native)");
                 hasSourceWhiteSpace = false;
             }
 
@@ -815,8 +821,7 @@ namespace BulletSharpGen
                 WriteTabs(level + 1);
                 string name = cachedProperty.Key;
                 name = char.ToLower(name[0]) + name.Substring(1);
-                HeaderWriteLine(string.Format("{0} _{1};",
-                    BulletParser.GetTypeRefName(cachedProperty.Value.Property.Type), name));
+                HeaderWriteLine($"{BulletParser.GetTypeRefName(cachedProperty.Value.Property.Type)} _{name};");
                 hasHeaderWhiteSpace = false;
             }
 
@@ -830,14 +835,14 @@ namespace BulletSharpGen
                     EnsureAccess(level, ref currentAccess, RefAccessSpecifier.Internal);
 
                     WriteTabs(level + 1);
-                    SourceWrite(string.Format("{0}::", @class.FullNameManaged));
-                    Write(string.Format("{0}({1}* native)", @class.ManagedName, @class.FullyQualifiedName));
+                    SourceWrite($"{@class.FullNameCppCli}::");
+                    Write($"{@class.ManagedName}({@class.FullyQualifiedName}* native)");
                     HeaderWriteLine(';');
                     SourceWriteLine();
                     if (@class.BaseClass != null)
                     {
                         WriteTabs(1, true);
-                        SourceWriteLine(string.Format(": {0}(native)", @class.BaseClass.ManagedName));
+                        SourceWriteLine($": {@class.BaseClass.ManagedName}(native)");
                     }
                     SourceWriteLine('{');
                     if (@class.BaseClass == null)
@@ -853,22 +858,22 @@ namespace BulletSharpGen
                 // Write destructor & finalizer
                 if (@class.BaseClass == null)
                 {
-                    // ECMA-372 19.13.2: "The access-specifier of a finalizer in a ref class is ignored."
-                    WriteTabs(level + 1);
-                    HeaderWriteLine(string.Format("!{0}();", @class.ManagedName));
                     // ECMA-372 19.13.1: "The access-specifier of a destructor in a ref class is ignored."
                     WriteTabs(level + 1);
-                    HeaderWriteLine(string.Format("~{0}();", @class.ManagedName));
+                    HeaderWriteLine($"~{@class.ManagedName}();");
+                    // ECMA-372 19.13.2: "The access-specifier of a finalizer in a ref class is ignored."
+                    WriteTabs(level + 1);
+                    HeaderWriteLine($"!{@class.ManagedName}();");
                     hasHeaderWhiteSpace = false;
 
                     EnsureSourceWhiteSpace();
-                    SourceWriteLine(string.Format("{0}::~{1}()", @class.FullNameManaged, @class.ManagedName));
+                    SourceWriteLine($"{@class.FullNameCppCli}::~{@class.ManagedName}()");
                     SourceWriteLine('{');
-                    SourceWriteLine(string.Format("\tthis->!{0}();", @class.ManagedName));
+                    SourceWriteLine($"\tthis->!{@class.ManagedName}();");
                     SourceWriteLine('}');
                     SourceWriteLine();
 
-                    SourceWriteLine(string.Format("{0}::!{1}()", @class.FullNameManaged, @class.ManagedName));
+                    SourceWriteLine($"{@class.FullNameCppCli}::!{@class.ManagedName}()");
                     SourceWriteLine('{');
                     if (@class.IsTrackingDisposable)
                     {
@@ -916,18 +921,11 @@ namespace BulletSharpGen
                             OutputMethod(constructor, level);
                         }
                     }
-                    else
-                    {
-                        // Default constructor
-                        MethodDefinition constructor = new MethodDefinition(@class.Name, @class, 0);
-                        constructor.IsConstructor = true;
-                        OutputMethod(constructor, level);
-                    }
                 }
             }
 
             // Write non-constructor methods
-            var methods = @class.Methods.Where(m => !m.IsConstructor);
+            var methods = @class.Methods.Where(m => !m.IsConstructor && !m.IsExcluded);
             if (methods.Any())
             {
                 EnsureHeaderWhiteSpace();
@@ -947,7 +945,7 @@ namespace BulletSharpGen
                 string typeConditional = GetTypeConditional(prop.Type, @class.Header);
                 if (typeConditional != null)
                 {
-                    WriteLine(string.Format("#ifndef {0}", typeConditional));
+                    WriteLine($"#ifndef {typeConditional}");
                     hasSourceWhiteSpace = true;
                 }
                 else
@@ -958,8 +956,7 @@ namespace BulletSharpGen
                 EnsureAccess(level, ref currentAccess, RefAccessSpecifier.Public);
 
                 WriteTabs(level + 1);
-                HeaderWriteLine(string.Format("property {0} {1}",
-                    BulletParser.GetTypeRefName(prop.Type), prop.Name));
+                HeaderWriteLine($"property {BulletParser.GetTypeRefName(prop.Type)} {prop.Name}");
                 WriteTabs(level + 1);
                 HeaderWriteLine("{");
 
@@ -989,22 +986,17 @@ namespace BulletSharpGen
 
         public override void Output()
         {
-            string outDirectory = NamespaceName + "_cppcli";
-
             foreach (HeaderDefinition header in headerDefinitions)
             {
-                if (header.Classes.All(c => IsExcludedClass(c)))
-                {
-                    continue;
-                }
+                if (header.Classes.All(IsExcludedClass)) continue;
 
-                Directory.CreateDirectory(outDirectory);
-                var headerFile = new FileStream(outDirectory + "\\" + header.ManagedName + ".h", FileMode.Create, FileAccess.Write);
+                Directory.CreateDirectory(_project.CppCliProjectPathFull);
+                var headerFile = new FileStream(Path.Combine(_project.CppCliProjectPathFull, header.ManagedName + ".h"), FileMode.Create, FileAccess.Write);
                 headerWriter = new StreamWriter(headerFile);
                 HeaderWriteLine("#pragma once");
                 HeaderWriteLine();
 
-                var sourceFile = new FileStream(outDirectory + "\\" + header.ManagedName + ".cpp", FileMode.Create, FileAccess.Write);
+                var sourceFile = new FileStream(Path.Combine(_project.CppCliProjectPathFull, header.ManagedName + ".cpp"), FileMode.Create, FileAccess.Write);
                 sourceWriter = new StreamWriter(sourceFile);
                 SourceWriteLine("#include \"StdAfx.h\"");
                 SourceWriteLine();
@@ -1012,7 +1004,7 @@ namespace BulletSharpGen
                 string headerConditional;
                 if (headerConditionals.TryGetValue(header.ManagedName, out headerConditional))
                 {
-                    SourceWriteLine(string.Format("#ifndef {0}", headerConditional));
+                    SourceWriteLine($"#ifndef {headerConditional}");
                     SourceWriteLine();
                 }
 
@@ -1021,13 +1013,13 @@ namespace BulletSharpGen
                 {
                     foreach (var include in header.Includes)
                     {
-                        HeaderWriteLine(string.Format("#include \"{0}.h\"", include.ManagedName));
+                        HeaderWriteLine($"#include \"{include.ManagedName}.h\"");
                     }
                     HeaderWriteLine();
                 }
 
                 // Write namespace
-                HeaderWriteLine(string.Format("namespace {0}", NamespaceName));
+                HeaderWriteLine($"namespace {NamespaceName}");
                 HeaderWriteLine("{");
                 hasHeaderWhiteSpace = true;
 
@@ -1046,7 +1038,7 @@ namespace BulletSharpGen
                 var forwardRefHeaders = new List<HeaderDefinition>();
                 foreach (ClassDefinition c in forwardRefs)
                 {
-                    HeaderWriteLine(string.Format("\tref class {0};", c.ManagedName));
+                    HeaderWriteLine($"\tref class {c.ManagedName};");
                     if (!forwardRefHeaders.Contains(c.Header))
                     {
                         forwardRefHeaders.Add(c.Header);
@@ -1076,7 +1068,7 @@ namespace BulletSharpGen
                             SourceWrite("#ifndef ");
                             SourceWriteLine(headerConditionals[refHeader.ManagedName]);
                         }
-                        SourceWriteLine(string.Format("#include \"{0}.h\"", refHeader.ManagedName));
+                        SourceWriteLine($"#include \"{refHeader.ManagedName}.h\"");
                         if (hasHeaderConditional)
                         {
                             SourceWriteLine("#endif");
@@ -1105,9 +1097,6 @@ namespace BulletSharpGen
             Console.WriteLine("Write complete");
         }
 
-        // These do no need forward references
-        public List<string> PrecompiledHeaderReferences = new List<string>(new[] { "Vector3", "Matrix3x3", "Quaternion", "Transform", "Vector4" });
-
         void AddForwardReference(List<ClassDefinition> forwardRefs, TypeRefDefinition type, HeaderDefinition header)
         {
             if (type.IsBasic)
@@ -1125,7 +1114,7 @@ namespace BulletSharpGen
             {
                 return;
             }
-            if (type.Target.IsExcluded || 
+            if (type.Target.IsExcluded ||
                 forwardRefs.Contains(type.Target) ||
                 PrecompiledHeaderReferences.Contains(type.Target.ManagedName))
             {

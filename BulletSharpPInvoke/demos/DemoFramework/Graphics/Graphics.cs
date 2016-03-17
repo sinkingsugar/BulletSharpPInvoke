@@ -5,7 +5,7 @@ using BulletSharp;
 
 namespace DemoFramework
 {
-    public abstract class Graphics : System.IDisposable
+    public abstract class Graphics : IDisposable
     {
         public Demo Demo { get; protected set; }
         public Form Form { get; protected set; }
@@ -25,6 +25,8 @@ namespace DemoFramework
         public virtual bool IsFullScreen { get; set; }
         public virtual bool CullingEnabled { get; set; }
 
+        public string InfoText { get; private set; }
+
         public MeshFactory MeshFactory;
 
         public abstract IDebugDraw GetPhysicsDebugDrawer();
@@ -34,6 +36,7 @@ namespace DemoFramework
             Demo = demo;
             FarPlane = 400.0f;
             FieldOfView = (float)Math.PI / 4;
+            InfoText = "";
         }
 
         public virtual void Initialize()

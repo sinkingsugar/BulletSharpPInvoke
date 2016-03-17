@@ -1,11 +1,35 @@
 ﻿namespace BulletSharpGen
 {
+    public enum MarshalDirection
+    {
+        /// <summary>
+        /// The parameter is marshaled to the callee,
+        /// but not back to the caller.
+        /// Default for a basic type or a const pointer/reference.
+        /// </summary>
+        In,
+
+        /// <summary>
+        /// The parameter is marshaled back to the caller,
+        /// but not to the callee.
+        /// Can be explicitly specified for a non-const pointer/reference.
+        /// </summary>
+        Out,
+
+        /// <summary>
+        /// The parameter is marshaled to the callee and also back to the caller.
+        /// Default for a non-const pointer/reference.
+        /// </summary>
+        InOut
+    }
+
     public class ParameterDefinition
     {
-        public string Name { get; private set; }
-        public TypeRefDefinition Type { get; private set; }
+        public string Name { get; }
+        public TypeRefDefinition Type { get; set; }
         public bool IsOptional { get; set; }
         public string ManagedName { get; set; }
+        public MarshalDirection MarshalDirection { get; set; }
 
         public ParameterDefinition(string name, TypeRefDefinition type, bool isOptional = false)
         {
@@ -16,14 +40,15 @@
 
         internal ParameterDefinition Copy()
         {
-            ParameterDefinition p = new ParameterDefinition(Name, Type, IsOptional);
+            var p = new ParameterDefinition(Name, Type, IsOptional);
             p.ManagedName = ManagedName;
+            p.MarshalDirection = MarshalDirection;
             return p;
         }
 
         public override string ToString()
         {
-            return Type.ToString() + ' ' + Name;
+            return $"{Type} {Name}";
         }
     }
 }

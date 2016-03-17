@@ -5,7 +5,18 @@ namespace BulletSharpGen
     public class TypeRefDefinition
     {
         public string Name { get; set; }
+
+        /// <summary>
+        /// Type is void, int, float, enum, etc.
+        /// or a typedef to a basic type.
+        /// </summary>
         public bool IsBasic { get; set; }
+
+        /// <summary>
+        /// Class declaration is a forward reference.
+        /// </summary>
+        public bool IsIncomplete { get; set; }
+
         public bool IsPointer { get; set; }
         public bool IsReference { get; set; }
         public bool IsConstantArray { get; set; }
@@ -120,6 +131,14 @@ namespace BulletSharpGen
 
         public TypeRefDefinition(ClangSharp.Type type)
         {
+            if (!type.Declaration.IsInvalid &&
+                !type.Declaration.IsDefinition &&
+                type.Declaration.SpecializedCursorTemplate.IsInvalid)
+            {
+                // Forward reference
+                IsIncomplete = true;
+            }
+
             IsConst = type.IsConstQualifiedType;
 
             switch (type.TypeKind)
@@ -198,17 +217,20 @@ namespace BulletSharpGen
 
         public TypeRefDefinition Copy()
         {
-            var t = new TypeRefDefinition();
-            t.HasTemplateTypeParameter = HasTemplateTypeParameter;
-            t.IsBasic = IsBasic;
-            t.IsConst = IsConst;
-            t.IsConstantArray = IsConstantArray;
-            t.IsPointer = IsPointer;
-            t.IsReference = IsReference;
-            t.Name = Name;
-            t.Referenced = Referenced;
-            t.SpecializedTemplateType = SpecializedTemplateType;
-            t.Target = Target;
+            var t = new TypeRefDefinition
+            {
+                HasTemplateTypeParameter = HasTemplateTypeParameter,
+                IsBasic = IsBasic,
+                IsConst = IsConst,
+                IsConstantArray = IsConstantArray,
+                IsIncomplete = IsIncomplete,
+                IsPointer = IsPointer,
+                IsReference = IsReference,
+                Name = Name,
+                Referenced = Referenced,
+                SpecializedTemplateType = SpecializedTemplateType,
+                Target = Target
+            };
             return t;
         }
 
@@ -219,6 +241,10 @@ namespace BulletSharpGen
             if (decl.IsInvalid)
             {
                 name = "[unexposed type]";
+            }
+            else if (!decl.SpecializedCursorTemplate.IsInvalid)
+            {
+                name = decl.DisplayName;
             }
             else
             {
@@ -259,11 +285,6 @@ namespace BulletSharpGen
 
         public override bool Equals(object obj)
         {
-            if (obj == null)
-            {
-                return false;
-            }
-
             TypeRefDefinition t = obj as TypeRefDefinition;
             if (t == null)
             {
